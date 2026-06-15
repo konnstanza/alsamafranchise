@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alsama – Team Poll</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #f9f5f2;
+      color: #25232E;
+      font-family: Georgia, serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #47535a;
+      color: #fff;
+      padding: 1.25rem 2rem;
+      text-align: center;
+      font-size: 1.5rem;
+      letter-spacing: 0.05em;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 640px;
+    }
+
+    .progress {
+      font-size: 0.85rem;
+      color: #47535a;
+      margin-bottom: 0.75rem;
+      letter-spacing: 0.03em;
+    }
+
+    h2 {
+      font-size: 1.45rem;
+      line-height: 1.4;
+      margin-bottom: 1.5rem;
+      color: #25232E;
+    }
+
+    .options {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .option-btn {
+      background: #fff;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      padding: 0.9rem 1.2rem;
+      font-family: Georgia, serif;
+      font-size: 1rem;
+      color: #25232E;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.15s, background 0.15s, color 0.15s;
+    }
+
+    .option-btn:hover {
+      border-color: #d04c72;
+    }
+
+    .option-btn.selected {
+      background: #d04c72;
+      border-color: #d04c72;
+      color: #fff;
+    }
+
+    #submit-btn {
+      display: none;
+      background: #d04c72;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.85rem 2rem;
+      font-family: Georgia, serif;
+      font-size: 1rem;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity 0.15s;
+    }
+
+    #submit-btn:hover { opacity: 0.88; }
+
+    /* Tally */
+    .tally { display: none; }
+    .tally-title {
+      font-size: 1rem;
+      color: #47535a;
+      margin-bottom: 1.2rem;
+      font-style: italic;
+    }
+
+    .tally-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .tally-label {
+      font-size: 0.95rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .bar-wrap {
+      width: 160px;
+      height: 14px;
+      background: #e8e3de;
+      border-radius: 7px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: #d04c72;
+      border-radius: 7px;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    .tally-count {
+      font-size: 0.95rem;
+      font-variant-numeric: tabular-nums;
+      min-width: 2ch;
+      text-align: right;
+    }
+
+    #next-btn {
+      display: none;
+      margin-top: 1.75rem;
+      background: #ddb148;
+      color: #25232E;
+      border: none;
+      border-radius: 8px;
+      padding: 0.85rem 2rem;
+      font-family: Georgia, serif;
+      font-size: 1rem;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity 0.15s;
+    }
+
+    #next-btn:hover { opacity: 0.88; }
+
+    .done-msg {
+      display: none;
+      text-align: center;
+      font-size: 1.2rem;
+      line-height: 1.7;
+      color: #25232E;
+      padding: 2rem 0;
+    }
+  </style>
+</head>
+<body>
+
+<header>Alsama</header>
+
+<main>
+  <div class="card">
+    <div class="progress" id="progress"></div>
+    <h2 id="question-text"></h2>
+
+    <div class="options" id="options-list"></div>
+    <button id="submit-btn">Submit</button>
+
+    <div class="tally" id="tally-section">
+      <p class="tally-title">Live results — updating as others vote</p>
+      <div id="tally-rows"></div>
+    </div>
+
+    <button id="next-btn">Next →</button>
+
+    <p class="done-msg" id="done-msg">
+      That’s all — thanks for sharing.<br>Your responses have been recorded.
+    </p>
+  </div>
+</main>
+
+<script>
+  // ─── CONFIG ────────────────────────────────────────────────────────────────────────────
+  const SUPABASE_URL      = 'https://eueqklakdyjyywvrqxge.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV1ZXFrbGFrZHlqeXl3dnJxeGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MDk2ODksImV4cCI6MjA5NzA4NTY4OX0.CLIaoVPxp1jO7cuRIB1ku7wzVNVr0j2ZCoq83lMz2Jg';
+  // ──────────────────────────────────────────────────────────────────────────────
+
+  const { createClient } = supabase;
+  const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const QUESTIONS = [
+    {
+      text: 'How excited are you about Alsama going AI-native?',
+      options: [
+        'Not interested',
+        'Could be persuaded',
+        'Curious',
+        "I'm ready — let's go!",
+      ],
+    },
+    {
+      text: 'Which part of going AI-native excites (or scares) you most?',
+      options: [
+        'The time it could save me',
+        "Getting left behind if I don't learn it",
+        'What it could do for our students',
+        "Honestly, I'm not sure yet",
+      ],
+    },
+    {
+      text: 'How would you rate your current AI confidence?',
+      options: [
+        "I've never used it",
+        "I've dabbled but wouldn't call myself confident",
+        'I use it regularly',
+        'I could teach a workshop tomorrow',
+      ],
+    },
+    {
+      text: 'What would help you get on board?',
+      options: [
+        'A proper training session',
+        'Seeing it work at Alsama first',
+        'Just give me time to experiment',
+        "I'm already on board — what are we waiting for?",
+      ],
+    },
+  ];
+
+  let currentQ    = parseInt(localStorage.getItem('poll_current_q') || '0', 10);
+  let answered    = JSON.parse(localStorage.getItem('poll_answered') || '[]');
+  let selectedOpt = null;
+  let realtimeSub = null;
+
+  const progressEl   = document.getElementById('progress');
+  const questionEl   = document.getElementById('question-text');
+  const optionsList  = document.getElementById('options-list');
+  const submitBtn    = document.getElementById('submit-btn');
+  const tallySection = document.getElementById('tally-section');
+  const tallyRows    = document.getElementById('tally-rows');
+  const nextBtn      = document.getElementById('next-btn');
+  const doneMsg      = document.getElementById('done-msg');
+
+  function init() {
+    if (localStorage.getItem('poll_done') === '1') { showDone(); return; }
+    const wasAnswered = answered[currentQ];
+    renderQuestion(currentQ);
+    if (wasAnswered) showTallyPhase(currentQ);
+  }
+
+  function renderQuestion(qIdx) {
+    const q = QUESTIONS[qIdx];
+    progressEl.textContent = `Question ${qIdx + 1} of ${QUESTIONS.length}`;
+    questionEl.textContent = q.text;
+    optionsList.innerHTML  = '';
+    selectedOpt = null;
+    submitBtn.style.display    = 'none';
+    tallySection.style.display = 'none';
+    nextBtn.style.display      = 'none';
+    doneMsg.style.display      = 'none';
+    optionsList.style.display  = 'flex';
+
+    q.options.forEach((opt) => {
+      const btn = document.createElement('button');
+      btn.className   = 'option-btn';
+      btn.textContent = opt;
+      btn.addEventListener('click', () => selectOption(btn, opt));
+      optionsList.appendChild(btn);
+    });
+  }
+
+  function selectOption(btn, opt) {
+    document.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedOpt = opt;
+    submitBtn.style.display = 'block';
+  }
+
+  submitBtn.addEventListener('click', async () => {
+    if (!selectedOpt) return;
+    submitBtn.disabled = true;
+    const { error } = await db.from('responses').insert({
+      question_number: currentQ + 1,
+      answer: selectedOpt,
+    });
+    if (error) { console.error(error); submitBtn.disabled = false; return; }
+    answered[currentQ] = true;
+    localStorage.setItem('poll_answered', JSON.stringify(answered));
+    showTallyPhase(currentQ);
+  });
+
+  async function showTallyPhase(qIdx) {
+    optionsList.style.display  = 'none';
+    submitBtn.style.display    = 'none';
+    tallySection.style.display = 'block';
+    await renderTally(qIdx);
+    subscribeToTally(qIdx);
+    setTimeout(() => {
+      nextBtn.style.display = 'block';
+      nextBtn.textContent   = qIdx < QUESTIONS.length - 1 ? 'Next →' : 'Finish';
+    }, 5000);
+  }
+
+  async function renderTally(qIdx) {
+    const { data, error } = await db
+      .from('responses').select('answer').eq('question_number', qIdx + 1);
+    if (error) { console.error(error); return; }
+    const opts   = QUESTIONS[qIdx].options;
+    const counts = {};
+    opts.forEach(o => (counts[o] = 0));
+    (data || []).forEach(row => { if (counts[row.answer] !== undefined) counts[row.answer]++; });
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    tallyRows.innerHTML = '';
+    opts.forEach(opt => {
+      const count = counts[opt] || 0;
+      const pct   = total > 0 ? (count / total) * 100 : 0;
+      const row   = document.createElement('div');
+      row.className = 'tally-row';
+      row.innerHTML = `
+        <span class="tally-label" title="${opt}">${opt}</span>
+        <div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <span class="tally-count">${count}</span>`;
+      tallyRows.appendChild(row);
+    });
+  }
+
+  function subscribeToTally(qIdx) {
+    if (realtimeSub) { db.removeChannel(realtimeSub); realtimeSub = null; }
+    realtimeSub = db.channel(`responses-q${qIdx + 1}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'responses', filter: `question_number=eq.${qIdx + 1}` },
+        () => renderTally(qIdx))
+      .subscribe();
+  }
+
+  nextBtn.addEventListener('click', () => {
+    if (realtimeSub) { db.removeChannel(realtimeSub); realtimeSub = null; }
+    if (currentQ < QUESTIONS.length - 1) {
+      currentQ++;
+      localStorage.setItem('poll_current_q', currentQ);
+      renderQuestion(currentQ);
+    } else {
+      localStorage.setItem('poll_done', '1');
+      showDone();
+    }
+  });
+
+  function showDone() {
+    progressEl.textContent     = '';
+    questionEl.textContent     = '';
+    optionsList.style.display  = 'none';
+    submitBtn.style.display    = 'none';
+    tallySection.style.display = 'none';
+    nextBtn.style.display      = 'none';
+    doneMsg.style.display      = 'block';
+  }
+
+  init();
+</script>
+</body>
+</html>
